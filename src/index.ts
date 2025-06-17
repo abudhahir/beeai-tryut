@@ -15,6 +15,7 @@ import { CalculatorTool } from 'beeai-framework/tools/calculator';
 import { WikipediaTool } from 'beeai-framework/tools/search/wikipedia';
 import { GitTool } from './tools/GitTool.js';
 import { CodebaseAnalyzer } from './tools/CodebaseAnalyzer.js';
+import { ASTCodebaseAnalyzer } from './tools/ASTCodebaseAnalyzer.js';
 
 interface BeeAIResponse {
   result: {
@@ -64,10 +65,11 @@ class BeeAICLI {
           new WikipediaTool(),
           new GitTool(),
           new CodebaseAnalyzer(),
+          new ASTCodebaseAnalyzer(),
         ],
         meta: {
           name: 'Bee AI CLI Assistant',
-          description: 'A helpful AI assistant with access to calculator, Wikipedia, Git, and codebase analysis tools'
+          description: 'A helpful AI assistant with access to calculator, Wikipedia, Git, traditional codebase analysis, and advanced AST-based semantic code analysis tools'
         }
       });
 
@@ -80,7 +82,7 @@ class BeeAICLI {
   async start(): Promise<void> {
     console.log(chalk.blue.bold('🐝 Bee AI Agent CLI'));
     console.log(chalk.gray('Connected to OpenAI with BeeAI Framework'));
-    console.log(chalk.gray('Available tools: Calculator, Wikipedia, Git, Codebase Analyzer'));
+    console.log(chalk.gray('Available tools: Calculator, Wikipedia, Git, Codebase Analyzer, AST Code Analyzer'));
     console.log(chalk.gray('Type your messages below. Enter "quit" to exit.\n'));
     
     this.isRunning = true;
@@ -214,6 +216,11 @@ class BeeAICLI {
       const codebaseKeywords = ['analyze', 'codebase', 'code', 'function', 'class', 'file', 'directory', 'search code', 'find function', 'explain code', 'code structure'];
       if (codebaseKeywords.some(keyword => input.toLowerCase().includes(keyword))) {
         await this.streamStep('🛠️', 'Tool Call', 'Using Codebase Analyzer: Analyzing code structure and content...');
+      }
+      
+      const astKeywords = ['ast', 'semantic', 'parse', 'embedding', 'vector', 'intelligent', 'similar code', 'semantic search'];
+      if (astKeywords.some(keyword => input.toLowerCase().includes(keyword))) {
+        await this.streamStep('🛠️', 'Tool Call', 'Using AST Analyzer: Performing semantic code analysis with vector embeddings...');
       }
       
       await this.streamStep('🧠', 'LLM Call', 'Sending request to OpenAI...');
@@ -560,6 +567,10 @@ class BeeAICLI {
     console.log(chalk.blue('│') + chalk.gray('   • Use for code: "analyze /path/to/code" or "find function  ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.gray('     getName" or "explain this codebase"                      ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.gray('   • Operations: analyze, search, find_function, find_class   ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' AST Code Analyzer:                                           ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Advanced: "semantic search for auth functions" or        ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('     "find similar code to this function"                     ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Uses AST parsing and vector embeddings for intelligence  ') + chalk.blue('│'));
     console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
@@ -598,6 +609,8 @@ class BeeAICLI {
     console.log(chalk.blue('│') + chalk.cyan(' "Find function calculateTotal"                               ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.cyan(' "Explain the architecture of this codebase"                 ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.cyan(' "What design patterns are used in this code?"               ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Semantic search for authentication functions"              ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Find similar code patterns using AST analysis"             ') + chalk.blue('│'));
     console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
