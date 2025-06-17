@@ -21,11 +21,20 @@ interface BeeAIResponse {
   };
 }
 
+interface ErrorDetails {
+  type: string;
+  message: string;
+  stack?: string;
+  command?: string;
+  suggestion?: string;
+}
+
 class BeeAICLI {
   private memory: SessionMemory;
   private isRunning: boolean = false;
   private agent: ToolCallingAgent | null = null;
   private llm: OpenAIChatModel | null = null;
+  private lastError: ErrorDetails | null = null;
 
   constructor() {
     this.memory = new SessionMemory();
@@ -36,9 +45,7 @@ class BeeAICLI {
     try {
       // Check for OpenAI API key
       if (!process.env.OPENAI_API_KEY) {
-        console.error(chalk.red('Error: OPENAI_API_KEY environment variable is required.'));
-        console.log(chalk.yellow('Please create a .env file with your OpenAI API key:'));
-        console.log(chalk.gray('OPENAI_API_KEY=your_api_key_here'));
+        this.displayError('OPENAI_API_KEY environment variable is required.', 'INIT_ERROR');
         process.exit(1);
       }
 
@@ -63,7 +70,7 @@ class BeeAICLI {
       });
 
     } catch (error) {
-      console.error(chalk.red('Failed to initialize BeeAI:'), error);
+      this.displayError(error as Error, 'INIT_ERROR');
       process.exit(1);
     }
   }
@@ -104,6 +111,11 @@ class BeeAICLI {
           break;
         }
 
+        // Handle error-related commands
+        if (this.handleErrorCommands(userInput)) {
+          continue;
+        }
+
         await this.processInput(userInput, boxWidth);
         
       } catch (error) {
@@ -111,7 +123,7 @@ class BeeAICLI {
           this.handleQuit();
           break;
         }
-        console.error(chalk.red('Error:'), error);
+        this.displayError(error as Error, 'RUNTIME_ERROR');
       }
     }
   }
@@ -214,6 +226,20 @@ class BeeAICLI {
       return finalResponse;
     } catch (error) {
       await this.streamStep('❌', 'Error', `Failed to generate response: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Determine error type based on error message
+      let errorType = 'RUNTIME_ERROR';
+      if (error instanceof Error) {
+        if (error.message.includes('API') || error.message.includes('OpenAI') || error.message.includes('rate limit') || error.message.includes('quota')) {
+          errorType = 'API_ERROR';
+        } else if (error.message.includes('network') || error.message.includes('connection') || error.message.includes('fetch')) {
+          errorType = 'NETWORK_ERROR';
+        } else if (error.message.includes('tool') || error.message.includes('calculator') || error.message.includes('wikipedia') || error.message.includes('git')) {
+          errorType = 'TOOL_ERROR';
+        }
+      }
+      
+      this.displayError(error as Error, errorType);
       return 'Sorry, I encountered an error while processing your request. Please try again.';
     }
   }
@@ -273,6 +299,292 @@ class BeeAICLI {
     }
 
     return lines.length > 0 ? lines : [''];
+  }
+
+  private displayError(error: Error | string, type: string = 'RUNTIME_ERROR'): void {
+    const termWidth = process.stdout.columns || 80;
+    const innerWidth = Math.max(40, termWidth) - 2;
+    const maxWidth = innerWidth - 2;
+
+    let errorDetails: ErrorDetails;
+    
+    if (error instanceof Error) {
+      errorDetails = {
+        type,
+        message: error.message,
+        stack: error.stack,
+        command: this.getErrorCommand(type),
+        suggestion: this.getErrorSuggestion(type, error.message)
+      };
+    } else {
+      errorDetails = {
+        type,
+        message: error,
+        command: this.getErrorCommand(type),
+        suggestion: this.getErrorSuggestion(type, error)
+      };
+    }
+
+    this.lastError = errorDetails;
+
+    // Draw red error box
+    console.log(chalk.red('┌' + '─'.repeat(innerWidth) + '┐'));
+    
+    // Title line
+    const title = ` ❌ ERROR: ${errorDetails.type}`;
+    const titlePad = innerWidth - title.length;
+    console.log(chalk.red('│') + chalk.white.bold(title) + ' '.repeat(Math.max(0, titlePad)) + chalk.red('│'));
+    
+    // Separator
+    console.log(chalk.red('├' + '─'.repeat(innerWidth) + '┤'));
+    
+    // Error message
+    const wrappedMessage = this.wrapText(errorDetails.message, maxWidth);
+    wrappedMessage.forEach(line => {
+      const paddedLine = line.padEnd(maxWidth);
+      console.log(chalk.red('│ ') + chalk.white(paddedLine) + chalk.red(' │'));
+    });
+
+    // Add command shortcut if available
+    if (errorDetails.command) {
+      console.log(chalk.red('├' + '─'.repeat(innerWidth) + '┤'));
+      const commandText = `💡 Quick help: Type "${errorDetails.command}" for details`;
+      const wrappedCommand = this.wrapText(commandText, maxWidth);
+      wrappedCommand.forEach(line => {
+        const paddedLine = line.padEnd(maxWidth);
+        console.log(chalk.red('│ ') + chalk.yellow(paddedLine) + chalk.red(' │'));
+      });
+    }
+
+    // Add suggestion if available
+    if (errorDetails.suggestion) {
+      console.log(chalk.red('├' + '─'.repeat(innerWidth) + '┤'));
+      const wrappedSuggestion = this.wrapText(errorDetails.suggestion, maxWidth);
+      wrappedSuggestion.forEach(line => {
+        const paddedLine = line.padEnd(maxWidth);
+        console.log(chalk.red('│ ') + chalk.cyan(paddedLine) + chalk.red(' │'));
+      });
+    }
+
+    // Show stack trace immediately for runtime and network errors
+    if ((errorDetails.type === 'RUNTIME_ERROR' || errorDetails.type === 'NETWORK_ERROR') && errorDetails.stack) {
+      console.log(chalk.red('├' + '─'.repeat(innerWidth) + '┤'));
+      console.log(chalk.red('│ ') + chalk.white.bold('Stack Trace:'.padEnd(maxWidth)) + chalk.red(' │'));
+      
+      const stackLines = errorDetails.stack.split('\n').slice(0, 8); // First 8 lines
+      stackLines.forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine) {
+          const wrappedStack = this.wrapText(trimmedLine, maxWidth - 2);
+          wrappedStack.forEach(stackLine => {
+            const paddedLine = ('  ' + stackLine).padEnd(maxWidth);
+            console.log(chalk.red('│ ') + chalk.gray(paddedLine) + chalk.red(' │'));
+          });
+        }
+      });
+    }
+
+    // Bottom border
+    console.log(chalk.red('└' + '─'.repeat(innerWidth) + '┘'));
+    console.log(); // Empty line for readability
+  }
+
+  private getErrorCommand(type: string): string {
+    const commands: { [key: string]: string } = {
+      'RUNTIME_ERROR': 'error',
+      'INIT_ERROR': 'init-help',
+      'API_ERROR': 'api-help',
+      'TOOL_ERROR': 'tool-help',
+      'NETWORK_ERROR': 'network-help'
+    };
+    return commands[type] || 'error';
+  }
+
+  private getErrorSuggestion(type: string, message: string): string {
+    // API Key related errors
+    if (message.includes('OPENAI_API_KEY') || message.includes('API key')) {
+      return '🔑 Set your OpenAI API key: create .env file with OPENAI_API_KEY=your_key_here';
+    }
+    
+    // Network related errors
+    if (message.includes('network') || message.includes('connection') || message.includes('fetch')) {
+      return '🌐 Check your internet connection and try again';
+    }
+    
+    // Tool related errors
+    if (message.includes('tool') || message.includes('calculator') || message.includes('wikipedia')) {
+      return '🛠️ Try rephrasing your request or check if the tool is available';
+    }
+    
+    // Git related errors
+    if (message.includes('git') || message.includes('repository')) {
+      return '📁 Make sure you\'re in a git repository directory';
+    }
+
+    // Generic suggestions based on error type
+    switch (type) {
+      case 'INIT_ERROR':
+        return '⚙️ Check your configuration and environment variables';
+      case 'API_ERROR':
+        return '🔌 Verify your API credentials and quota limits';
+      case 'TOOL_ERROR':
+        return '🔧 Try using a different tool or rephrasing your request';
+      default:
+        return '🔄 Try your request again or type "help" for assistance';
+    }
+  }
+
+  private showDetailedError(): void {
+    if (!this.lastError) {
+      console.log(chalk.yellow('No recent error to display.'));
+      return;
+    }
+
+    const termWidth = process.stdout.columns || 80;
+    const innerWidth = Math.max(60, termWidth) - 2;
+    const maxWidth = innerWidth - 2;
+
+    console.log(chalk.red('┌' + '─'.repeat(innerWidth) + '┐'));
+    console.log(chalk.red('│') + chalk.white.bold(` 🔍 DETAILED ERROR INFORMATION`.padEnd(innerWidth)) + chalk.red('│'));
+    console.log(chalk.red('├' + '─'.repeat(innerWidth) + '┤'));
+
+    // Error type
+    const typeText = `Type: ${this.lastError.type}`;
+    console.log(chalk.red('│ ') + chalk.yellow(typeText.padEnd(maxWidth)) + chalk.red(' │'));
+
+    // Error message
+    console.log(chalk.red('│ ') + chalk.white('Message:'.padEnd(maxWidth)) + chalk.red(' │'));
+    const wrappedMessage = this.wrapText(this.lastError.message, maxWidth - 2);
+    wrappedMessage.forEach(line => {
+      console.log(chalk.red('│ ') + chalk.gray(('  ' + line).padEnd(maxWidth)) + chalk.red(' │'));
+    });
+
+    // Stack trace if available
+    if (this.lastError.stack) {
+      console.log(chalk.red('├' + '─'.repeat(innerWidth) + '┤'));
+      console.log(chalk.red('│ ') + chalk.white('Stack Trace:'.padEnd(maxWidth)) + chalk.red(' │'));
+      const stackLines = this.lastError.stack.split('\n').slice(0, 10); // First 10 lines
+      stackLines.forEach(line => {
+        const wrappedStack = this.wrapText(line.trim(), maxWidth - 2);
+        wrappedStack.forEach(stackLine => {
+          console.log(chalk.red('│ ') + chalk.gray(('  ' + stackLine).padEnd(maxWidth)) + chalk.red(' │'));
+        });
+      });
+    }
+
+    console.log(chalk.red('└' + '─'.repeat(innerWidth) + '┘'));
+    console.log();
+  }
+
+  private handleErrorCommands(input: string): boolean {
+    const command = input.toLowerCase().trim();
+    
+    switch (command) {
+      case 'error':
+        this.showDetailedError();
+        return true;
+        
+      case 'init-help':
+        this.showInitHelp();
+        return true;
+        
+      case 'api-help':
+        this.showApiHelp();
+        return true;
+        
+      case 'tool-help':
+        this.showToolHelp();
+        return true;
+        
+      case 'network-help':
+        this.showNetworkHelp();
+        return true;
+        
+      case 'help':
+        this.showGeneralHelp();
+        return true;
+        
+      default:
+        return false;
+    }
+  }
+
+  private showInitHelp(): void {
+    console.log(chalk.blue('┌─ 🚀 INITIALIZATION HELP ─────────────────────────────────────┐'));
+    console.log(chalk.blue('│') + chalk.white(' Common initialization issues:                                ') + chalk.blue('│'));
+    console.log(chalk.blue('├──────────────────────────────────────────────────────────────┤'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Missing .env file                                          ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Create .env file with OPENAI_API_KEY=your_key    ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Invalid API key                                            ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Check your OpenAI account for valid key          ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Permission issues                                          ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Check file permissions and directory access      ') + chalk.blue('│'));
+    console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
+    console.log();
+  }
+
+  private showApiHelp(): void {
+    console.log(chalk.blue('┌─ 🔌 API HELP ────────────────────────────────────────────────┐'));
+    console.log(chalk.blue('│') + chalk.white(' Common API issues:                                           ') + chalk.blue('│'));
+    console.log(chalk.blue('├──────────────────────────────────────────────────────────────┤'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Rate limiting                                              ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Wait and try again, or upgrade your plan        ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Quota exceeded                                             ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Check your OpenAI usage dashboard               ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Invalid request format                                     ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Try rephrasing your request                      ') + chalk.blue('│'));
+    console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
+    console.log();
+  }
+
+  private showToolHelp(): void {
+    console.log(chalk.blue('┌─ 🛠️ TOOL HELP ───────────────────────────────────────────────┐'));
+    console.log(chalk.blue('│') + chalk.white(' Available tools and common issues:                           ') + chalk.blue('│'));
+    console.log(chalk.blue('├──────────────────────────────────────────────────────────────┤'));
+    console.log(chalk.blue('│') + chalk.yellow(' Calculator Tool:                                             ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Use for math: "calculate 2+2" or "what is 15*8?"         ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' Wikipedia Tool:                                              ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Use for info: "what is quantum physics?" or "tell me     ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('     about Albert Einstein"                                   ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' Git Tool:                                                    ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Use for git: "git status" or "show git log"              ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Make sure you\'re in a git repository                     ') + chalk.blue('│'));
+    console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
+    console.log();
+  }
+
+  private showNetworkHelp(): void {
+    console.log(chalk.blue('┌─ 🌐 NETWORK HELP ────────────────────────────────────────────┐'));
+    console.log(chalk.blue('│') + chalk.white(' Network connectivity issues:                                 ') + chalk.blue('│'));
+    console.log(chalk.blue('├──────────────────────────────────────────────────────────────┤'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Connection timeout                                         ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Check internet connection and try again          ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' • DNS resolution issues                                      ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Try different DNS servers or restart network     ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' • Firewall blocking requests                                 ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   Solution: Check firewall settings and proxy configuration  ') + chalk.blue('│'));
+    console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
+    console.log();
+  }
+
+  private showGeneralHelp(): void {
+    console.log(chalk.blue('┌─ 💡 HELP & COMMANDS ─────────────────────────────────────────┐'));
+    console.log(chalk.blue('│') + chalk.white(' Available commands:                                          ') + chalk.blue('│'));
+    console.log(chalk.blue('├──────────────────────────────────────────────────────────────┤'));
+    console.log(chalk.blue('│') + chalk.yellow(' help        ') + chalk.gray('- Show this help message                      ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' error       ') + chalk.gray('- Show detailed info about last error        ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' init-help   ') + chalk.gray('- Help with initialization issues             ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' api-help    ') + chalk.gray('- Help with API-related issues                ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' tool-help   ') + chalk.gray('- Help with available tools                   ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' network-help') + chalk.gray('- Help with network connectivity issues       ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' quit        ') + chalk.gray('- Exit the application                        ') + chalk.blue('│'));
+    console.log(chalk.blue('├──────────────────────────────────────────────────────────────┤'));
+    console.log(chalk.blue('│') + chalk.white(' Example usage:                                               ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Calculate 15 * 23"                                          ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "What is machine learning?"                                  ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Show git status"                                            ') + chalk.blue('│'));
+    console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
+    console.log();
   }
 
   private handleQuit(): void {
