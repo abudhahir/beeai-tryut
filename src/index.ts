@@ -14,6 +14,7 @@ import { UnconstrainedMemory } from 'beeai-framework/memory/unconstrainedMemory'
 import { CalculatorTool } from 'beeai-framework/tools/calculator';
 import { WikipediaTool } from 'beeai-framework/tools/search/wikipedia';
 import { GitTool } from './tools/GitTool.js';
+import { CodebaseAnalyzer } from './tools/CodebaseAnalyzer.js';
 
 interface BeeAIResponse {
   result: {
@@ -62,10 +63,11 @@ class BeeAICLI {
           new CalculatorTool(),
           new WikipediaTool(),
           new GitTool(),
+          new CodebaseAnalyzer(),
         ],
         meta: {
           name: 'Bee AI CLI Assistant',
-          description: 'A helpful AI assistant with access to calculator, Wikipedia, and Git tools'
+          description: 'A helpful AI assistant with access to calculator, Wikipedia, Git, and codebase analysis tools'
         }
       });
 
@@ -78,7 +80,7 @@ class BeeAICLI {
   async start(): Promise<void> {
     console.log(chalk.blue.bold('🐝 Bee AI Agent CLI'));
     console.log(chalk.gray('Connected to OpenAI with BeeAI Framework'));
-    console.log(chalk.gray('Available tools: Calculator, Wikipedia, Git'));
+    console.log(chalk.gray('Available tools: Calculator, Wikipedia, Git, Codebase Analyzer'));
     console.log(chalk.gray('Type your messages below. Enter "quit" to exit.\n'));
     
     this.isRunning = true;
@@ -207,6 +209,11 @@ class BeeAICLI {
       const gitKeywords = ['git', 'commit', 'branch', 'status', 'diff', 'log', 'repository', 'repo'];
       if (gitKeywords.some(keyword => input.toLowerCase().includes(keyword))) {
         await this.streamStep('🛠️', 'Tool Call', 'Using Git: Performing version control operations...');
+      }
+      
+      const codebaseKeywords = ['analyze', 'codebase', 'code', 'function', 'class', 'file', 'directory', 'search code', 'find function', 'explain code', 'code structure'];
+      if (codebaseKeywords.some(keyword => input.toLowerCase().includes(keyword))) {
+        await this.streamStep('🛠️', 'Tool Call', 'Using Codebase Analyzer: Analyzing code structure and content...');
       }
       
       await this.streamStep('🧠', 'LLM Call', 'Sending request to OpenAI...');
@@ -549,6 +556,10 @@ class BeeAICLI {
     console.log(chalk.blue('│') + chalk.yellow(' Git Tool:                                                    ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.gray('   • Use for git: "git status" or "show git log"              ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.gray('   • Make sure you\'re in a git repository                     ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.yellow(' Codebase Analyzer:                                           ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Use for code: "analyze /path/to/code" or "find function  ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('     getName" or "explain this codebase"                      ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.gray('   • Operations: analyze, search, find_function, find_class   ') + chalk.blue('│'));
     console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
@@ -583,6 +594,8 @@ class BeeAICLI {
     console.log(chalk.blue('│') + chalk.cyan(' "Calculate 15 * 23"                                          ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.cyan(' "What is machine learning?"                                  ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.cyan(' "Show git status"                                            ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Analyze the codebase in /path/to/project"                   ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Find function calculateTotal"                               ') + chalk.blue('│'));
     console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
