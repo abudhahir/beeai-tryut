@@ -25,6 +25,7 @@ A powerful TypeScript CLI application that creates an intelligent AI agent using
 - **Calculator Tool** - Advanced mathematical calculations and complex expressions
 - **Wikipedia Tool** - Real-time information retrieval, research, and knowledge queries
 - **Git Tool** - Complete git repository operations, status checking, and version control integration
+- **Codebase Analyzer** - Deep architectural analysis, design pattern detection, and intelligent code understanding
 
 ## Prerequisites
 
@@ -89,6 +90,7 @@ The AI agent comes with built-in tools that are automatically selected based on 
 - **Calculator Tool** - Perform mathematical calculations, complex expressions, and numerical operations
 - **Wikipedia Tool** - Search and retrieve information from Wikipedia, research topics, and answer knowledge questions
 - **Git Tool** - Execute git commands, check repository status, view commit history, and manage version control
+- **Codebase Analyzer** - Comprehensive codebase understanding with architectural pattern detection, design pattern recognition, code quality analysis, complexity metrics, and intelligent explanations
 
 ## Commands & Help System
 

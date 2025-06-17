@@ -596,6 +596,8 @@ class BeeAICLI {
     console.log(chalk.blue('│') + chalk.cyan(' "Show git status"                                            ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.cyan(' "Analyze the codebase in /path/to/project"                   ') + chalk.blue('│'));
     console.log(chalk.blue('│') + chalk.cyan(' "Find function calculateTotal"                               ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "Explain the architecture of this codebase"                 ') + chalk.blue('│'));
+    console.log(chalk.blue('│') + chalk.cyan(' "What design patterns are used in this code?"               ') + chalk.blue('│'));
     console.log(chalk.blue('└──────────────────────────────────────────────────────────────┘'));
     console.log();
   }
